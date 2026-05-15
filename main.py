@@ -127,9 +127,9 @@ if __name__ == '__main__':
     print("\n" + "="*50)
     print("🚀 Iniciando servidor Keithley Controller")
     print("="*50)
-    print("📍 API disponível em: http://localhost:8000")
+    print("📍 API disponível em: http://localhost:8001")
     print("🌐 CORS permitido para: http://localhost:5173")
     print("\n⚠️  Mantenha este terminal aberto enquanto usa a interface")
     print("="*50 + "\n")
     
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8001, debug=True)
