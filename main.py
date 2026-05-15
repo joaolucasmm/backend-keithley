@@ -123,12 +123,134 @@ def medir():
         traceback.print_exc()
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
+# ============================================
+# NOVO ENDPOINT: Medição I/V Simultânea
+# ============================================
+@app.route('/api/medir_iv', methods=['POST', 'OPTIONS'])
+def medir_iv():
+    """Medição simultânea de corrente e tensão"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+        print(f"\n⚡ Medição I/V Simultânea - Dados recebidos: {data}")
+        
+        num_leituras = data.get('num_leituras', 5)
+        delay = data.get('delay_entre_leituras', 0.5)
+        modo = data.get('modo', 'tensao_fixa')  # 'tensao_fixa' ou 'corrente_fixa'
+        valor_fixo = data.get('valor_fixo', 1.0)
+        
+        print(f"   - Leituras: {num_leituras}")
+        print(f"   - Modo: {modo}")
+        print(f"   - Valor fixo: {valor_fixo}")
+        print(f"   - Delay: {delay}s")
+        
+        resultados = []
+        
+        with DeviceManager() as dm:
+            keithley = dm.add_smu(KEITHLEY_ADDRESS)
+            
+            # Reset e configuração inicial
+            keithley.write('smua.reset()')
+            time.sleep(0.5)
+            
+            # Habilita autorange para tensão e corrente
+            keithley.write('smua.measure.autorangev = smua.AUTORANGE_ON')
+            keithley.write('smua.measure.autorangei = smua.AUTORANGE_ON')
+            
+            # Configura o modo de source (fonte)
+            if modo == "tensao_fixa":
+                keithley.write('smua.source.func = smua.OUTPUT_DCVOLTAGE')
+                keithley.write(f'smua.source.levelv = {valor_fixo}')
+                keithley.write('smua.source.limiti = 0.1')  # Limite de corrente (segurança)
+                print(f"   Configurado: Aplicando tensão fixa de {valor_fixo}V")
+            else:  # corrente_fixa
+                keithley.write('smua.source.func = smua.OUTPUT_DCCURRENT')
+                keithley.write(f'smua.source.leveli = {valor_fixo}')
+                keithley.write('smua.source.limitv = 40')  # Limite de tensão (segurança)
+                print(f"   Configurado: Aplicando corrente fixa de {valor_fixo}A")
+            
+            # Configura o modo de medição (sempre mede ambos)
+            keithley.write('smua.measure.func = smua.MEASURE_FUNC_DCVOLTAGE')
+            
+            for i in range(num_leituras):
+                print(f"   📈 Medição IV {i+1}/{num_leituras}...")
+                
+                # Liga a saída
+                keithley.write('smua.source.output = smua.OUTPUT_ON')
+                time.sleep(0.2)  # Tempo de estabilização
+                
+                # Método 1: Usar measure.iv() que retorna corrente e tensão
+                # O comando retorna: corrente, tensão
+                keithley.write('print(smua.measure.iv())')
+                time.sleep(0.3)
+                resposta = keithley.read()
+                
+                # Desliga a saída
+                keithley.write('smua.source.output = smua.OUTPUT_OFF')
+                
+                # Processa a resposta (espera dois valores: corrente, tensão)
+                try:
+                    # Remove espaços e quebra linhas
+                    resposta_limpa = resposta.strip()
+                    # Separa os valores por vírgula ou espaço
+                    if ',' in resposta_limpa:
+                        partes = resposta_limpa.split(',')
+                    else:
+                        partes = resposta_limpa.split()
+                    
+                    # Extrai corrente e tensão
+                    corrente = float(partes[0].strip())
+                    tensao = float(partes[1].strip()) if len(partes) > 1 else 0.0
+                    
+                    # Se estamos aplicando tensão fixa, a tensão medida deve ser próxima do valor fixo
+                    # Se estamos aplicando corrente fixa, a corrente medida deve ser próxima do valor fixo
+                    
+                except Exception as e:
+                    print(f"      Erro ao processar resposta: '{resposta}'")
+                    corrente = 0.0
+                    tensao = 0.0
+                
+                potencia = corrente * tensao
+                
+                resultado = {
+                    'corrente': round(corrente, 12),
+                    'tensao': round(tensao, 6),
+                    'potencia': round(potencia, 9)
+                }
+                
+                resultados.append(resultado)
+                print(f"      I = {corrente:.6e} A, V = {tensao:.4f} V, P = {potencia:.6f} W")
+                
+                if i < num_leituras - 1:
+                    time.sleep(delay)
+        
+        print(f"✅ Medição IV concluída! {len(resultados)} leituras")
+        
+        return jsonify({
+            "status": "sucesso",
+            "medicoes": resultados,
+            "mensagem": f"{len(resultados)} medições I/V realizadas com sucesso"
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro durante a medição IV: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
 if __name__ == '__main__':
     print("\n" + "="*50)
     print("🚀 Iniciando servidor Keithley Controller")
     print("="*50)
     print("📍 API disponível em: http://localhost:8001")
     print("🌐 CORS permitido para: http://localhost:5173")
+    print("\n📡 Endpoints disponíveis:")
+    print("   GET  - /api/health")
+    print("   GET  - /api/testar_conexao")
+    print("   POST - /api/medir (medição simples)")
+    print("   POST - /api/medir_iv (medição I/V simultânea)")
     print("\n⚠️  Mantenha este terminal aberto enquanto usa a interface")
     print("="*50 + "\n")
     
