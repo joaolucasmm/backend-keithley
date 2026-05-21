@@ -1,16 +1,47 @@
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+import sys
+import os
+import math
 import random
 import time
-import math
 from datetime import datetime
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
-app = Flask(__name__)
+# Determina o caminho base (funciona tanto em script quanto executável)
+if getattr(sys, 'frozen', False):
+    # Rodando como executável PyInstaller
+    base_path = sys._MEIPASS
+else:
+    # Rodando como script Python
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
-# Configuração CORS igual à versão real
+# Caminho para o frontend
+frontend_path = os.path.join(base_path, 'frontend', 'dist')
+
+# Configura o Flask para servir o frontend se existir
+if os.path.exists(frontend_path):
+    app = Flask(__name__, 
+                static_folder=frontend_path,
+                static_url_path='',
+                template_folder=frontend_path)
+    
+    # Rota para servir o index.html do Vue
+    @app.route('/')
+    def serve_vue():
+        return send_from_directory(frontend_path, 'index.html')
+    
+    # Rota para servir arquivos estáticos do Vue
+    @app.route('/<path:path>')
+    def serve_static(path):
+        return send_from_directory(frontend_path, path)
+else:
+    app = Flask(__name__)
+    print(f"Aviso: Frontend não encontrado em {frontend_path}")
+
+# Configuração CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174"],
+        "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000", "http://127.0.0.1:8000", "*"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
@@ -255,9 +286,12 @@ def medir_iv():
         print(f"[MOCK] ❌ Erro: {e}")
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
-@app.route('/api/mock/config', methods=['GET', 'POST'])
+@app.route('/api/mock/config', methods=['GET', 'POST', 'OPTIONS'])
 def mock_config():
     """Endpoint para configurar o comportamento do mock"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     global MOCK_CONFIG, MODO_DATA, contador
     
     if request.method == 'GET':
@@ -274,7 +308,7 @@ def mock_config():
             MOCK_CONFIG["modo"] = data["modo"]
         
         if 'ruido' in data:
-            MOCK_CONFIG["ruido"] = max(0, min(0.5, data["ruido"]))  # Limita a 50%
+            MOCK_CONFIG["ruido"] = max(0, min(0.5, data["ruido"]))
         
         if 'delay_artificial' in data:
             MOCK_CONFIG["delay_artificial"] = max(0, min(5, data["delay_artificial"]))
@@ -300,9 +334,12 @@ def mock_config():
             "modo_data": MODO_DATA
         })
 
-@app.route('/api/mock/reset', methods=['POST'])
+@app.route('/api/mock/reset', methods=['POST', 'OPTIONS'])
 def mock_reset():
     """Reseta o contador de medições"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     global contador
     contador = 0
     return jsonify({"status": "resetado", "contador": contador})
@@ -311,7 +348,8 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("🎭 SERVIDOR MOCK KEITHLEY 2611B")
     print("="*60)
-    print("📍 API disponível em: http://localhost:8000")
+    print(f"📍 API disponível em: http://localhost:8000")
+    print(f"📁 Frontend path: {frontend_path if os.path.exists(frontend_path) else 'Não encontrado'}")
     print("\n📡 Modos de simulação disponíveis:")
     print("   - realista:  Simula comportamentos reais de componentes")
     print("   - random:    Valores aleatórios")
@@ -319,11 +357,7 @@ if __name__ == '__main__':
     print("   - linear:    Variação linear")
     print("   - constante: Valor fixo")
     print("   - exponencial: Decaimento exponencial")
-    print("\n🔧 Configurar mock via POST /api/mock/config")
-    print("   Exemplo: curl -X POST http://localhost:8000/api/mock/config \\")
-    print("            -H 'Content-Type: application/json' \\")
-    print("            -d '{\"modo\":\"sine\", \"amplitude\":2.0}'")
     print("\n⚠️  Modo MOCK ativo - Nenhum hardware real está sendo usado")
     print("="*60 + "\n")
     
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='127.0.0.1', port=8000, debug=False, use_reloader=False)

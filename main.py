@@ -1,14 +1,46 @@
-from flask import Flask, request, jsonify
+import sys
+import os
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from tm_devices import DeviceManager
 import time
 
-app = Flask(__name__)
+# Determina o caminho base (funciona tanto em script quanto executável)
+if getattr(sys, 'frozen', False):
+    # Rodando como executável PyInstaller
+    base_path = sys._MEIPASS
+else:
+    # Rodando como script Python
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
-# Configuração CORS mais completa
+# Caminho para o frontend
+frontend_path = os.path.join(base_path, 'frontend', 'dist')
+
+# Configura o Flask para servir o frontend se existir
+if os.path.exists(frontend_path):
+    app = Flask(__name__, 
+                static_folder=frontend_path,
+                static_url_path='',
+                template_folder=frontend_path)
+
+ # Rota para servir o index.html do Vue
+    @app.route('/')
+    def serve_vue():
+        return send_from_directory(frontend_path, 'index.html')
+    
+    # Rota para servir arquivos estáticos do Vue
+    @app.route('/<path:path>')
+    def serve_static(path):
+        return send_from_directory(frontend_path, path)
+else:
+    app = Flask(__name__)
+    print(f"Aviso: Frontend não encontrado em {frontend_path}")
+
+
+# Configuração CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+        "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8001", "http://127.0.0.1:8001", "*"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
@@ -17,6 +49,7 @@ CORS(app, resources={
 
 # Endereço da Keithley
 KEITHLEY_ADDRESS = "USB0::0x05E6::0x2611::4629001::INSTR"
+
 
 @app.route('/api/health', methods=['GET', 'OPTIONS'])
 def health():
@@ -244,14 +277,8 @@ if __name__ == '__main__':
     print("\n" + "="*50)
     print("🚀 Iniciando servidor Keithley Controller")
     print("="*50)
-    print("📍 API disponível em: http://localhost:8001")
-    print("🌐 CORS permitido para: http://localhost:5173")
-    print("\n📡 Endpoints disponíveis:")
-    print("   GET  - /api/health")
-    print("   GET  - /api/testar_conexao")
-    print("   POST - /api/medir (medição simples)")
-    print("   POST - /api/medir_iv (medição I/V simultânea)")
-    print("\n⚠️  Mantenha este terminal aberto enquanto usa a interface")
+    print(f"📍 API disponível em: http://localhost:8001")
+    print(f"📁 Frontend path: {frontend_path if os.path.exists(frontend_path) else 'Não encontrado'}")
     print("="*50 + "\n")
     
-    app.run(host='0.0.0.0', port=8001, debug=True)
+    app.run(host='127.0.0.1', port=8001, debug=False, use_reloader=False)
