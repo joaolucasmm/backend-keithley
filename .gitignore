@@ -31,3 +31,6 @@ frontend_dist_mock/
 dist/
 mock_dist/
 
+# arquivos de ambiente virtual
+venv/
+
